@@ -17,7 +17,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentEvent, Alert, CaseFile, ComplianceReport, PipelineResult, PreFilterVerdict, RuleEngineVerdict, Transaction, TriageVerdict } from "../types";
 
-export type FeedItem = (AgentEvent | Alert) & { key: string };
+export type FeedItem = (AgentEvent | Alert) & { key: string; _contentKey: string };
+
+// A WebSocket broadcast is at-least-once, not exactly-once: a client that's
+// reconnected, or a server-side connection that took a moment to notice a
+// dead socket, can end up receiving the same logical event more than once.
+// Content (not arrival) identity is what should decide whether something's
+// "new" - so this hashes the semantic fields rather than trusting a
+// per-arrival sequence number.
+function contentKeyFor(item: AgentEvent | Alert): string {
+  if (item.type === "alert") {
+    return `alert|${item.transaction_id}|${item.severity}|${item.title}|${JSON.stringify(item.detail)}`;
+  }
+  return `event|${item.transaction_id}|${item.stage}|${item.label}|${JSON.stringify(item.detail)}`;
+}
 
 export interface CaseSummary {
   transaction: Transaction;
@@ -38,8 +51,19 @@ export function useLiveFeed() {
   const seq = useRef(0);
 
   const pushItem = useCallback((item: AgentEvent | Alert) => {
-    seq.current += 1;
-    setFeed((prev) => [{ ...item, key: `${item.transaction_id}-${seq.current}` }, ...prev].slice(0, 60));
+    const contentKey = contentKeyFor(item);
+    setFeed((prev) => {
+      // Only check the dedup window itself (bounded by the 60-item cap
+      // below), not an ever-growing side-set - that way a genuinely new
+      // occurrence of the same content is allowed back in once the old one
+      // has scrolled out.
+      if (prev.some((p) => p._contentKey === contentKey)) return prev;
+      seq.current += 1;
+      return [{ ...item, key: `${item.transaction_id}-${seq.current}`, _contentKey: contentKey }, ...prev].slice(
+        0,
+        60,
+      );
+    });
   }, []);
 
   const refreshRecent = useCallback(async () => {

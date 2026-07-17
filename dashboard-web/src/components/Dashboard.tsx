@@ -5,11 +5,11 @@ import { useLiveFeed, type FeedItem } from "@/lib/hooks/useLiveFeed";
 import type { Alert, AgentEvent } from "@/lib/types";
 import { SeverityBadge, StageBadge } from "./StageBadge";
 
-function isAlert(item: FeedItem): item is Alert & { key: string } {
+function isAlert(item: FeedItem): item is Alert & { key: string; _contentKey: string } {
   return item.type === "alert";
 }
 
-function isAgentEvent(item: FeedItem): item is AgentEvent & { key: string } {
+function isAgentEvent(item: FeedItem): item is AgentEvent & { key: string; _contentKey: string } {
   return item.type === "agent_event";
 }
 
