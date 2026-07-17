@@ -168,11 +168,30 @@ async def run_pipeline(force_risky: bool = False) -> dict[str, Any]:
     return {"transaction": tx.model_dump(mode="json"), **result.as_dict()}
 
 
+WS_IDLE_PING_SECONDS = 20
+
+
 @app.websocket("/v1/stream")
 async def stream(ws: WebSocket) -> None:
+    """The client never sends anything on this socket - it's server push
+    only - so a plain `receive_text()` loop can leave a connection that
+    dropped without a clean close handshake (e.g. a hard page navigation)
+    sitting in ConnectionManager forever: it would only be noticed the next
+    time something is broadcast and the send happens to fail, and some
+    transports don't fail that send promptly. Pinging on an idle timeout
+    turns a passive "wait for a broadcast to expose the dead socket" into
+    an active liveness check, so ConnectionManager can't accumulate stale
+    entries just from clients reloading the page.
+    """
     await manager.connect(ws)
     try:
         while True:
-            await ws.receive_text()
-    except WebSocketDisconnect:
+            try:
+                await asyncio.wait_for(ws.receive_text(), timeout=WS_IDLE_PING_SECONDS)
+            except asyncio.TimeoutError:
+                await ws.send_json({"type": "ping"})
+    except Exception:
+        # Covers WebSocketDisconnect (clean close) and anything else the
+        # transport can raise for a connection that's gone bad; either way
+        # the socket needs to come out of the connection set.
         manager.disconnect(ws)

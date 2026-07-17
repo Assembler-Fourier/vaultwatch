@@ -55,14 +55,18 @@ class PipelineResult:
         self.alert: Alert | None = None
 
     def as_dict(self) -> dict[str, Any]:
+        # mode="json" is load-bearing: Alert carries a `datetime` timestamp
+        # field, and plain model_dump() leaves it as a Python datetime
+        # object that json.dumps() (used by PostgresCaseStore) can't
+        # serialize.
         return {
             "stage_reached": self.stage_reached.value,
-            "rules": self.rules.model_dump() if self.rules else None,
-            "prefilter": self.prefilter.model_dump() if self.prefilter else None,
-            "triage": self.triage.model_dump() if self.triage else None,
-            "case": self.case.model_dump() if self.case else None,
-            "compliance": self.compliance.model_dump() if self.compliance else None,
-            "alert": self.alert.model_dump() if self.alert else None,
+            "rules": self.rules.model_dump(mode="json") if self.rules else None,
+            "prefilter": self.prefilter.model_dump(mode="json") if self.prefilter else None,
+            "triage": self.triage.model_dump(mode="json") if self.triage else None,
+            "case": self.case.model_dump(mode="json") if self.case else None,
+            "compliance": self.compliance.model_dump(mode="json") if self.compliance else None,
+            "alert": self.alert.model_dump(mode="json") if self.alert else None,
         }
 
 
