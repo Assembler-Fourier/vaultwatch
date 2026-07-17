@@ -1,0 +1,94 @@
+name: vaultwatch
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vaultwatch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vaultwatch-dev-only}
+      POSTGRES_DB: vaultwatch
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vaultwatch -d vaultwatch"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  engine-rust:
+    build: ./engine-rust
+    ports:
+      - "8081:8081"
+    volumes:
+      - audit-data:/app/data
+    environment:
+      PORT: 8081
+      AUDIT_LOG_PATH: /app/data/audit.log
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  gateway-go:
+    build: ./gateway-go
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      engine-rust:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://vaultwatch:${POSTGRES_PASSWORD:-vaultwatch-dev-only}@postgres:5432/vaultwatch
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      ENGINE_RUST_URL: http://engine-rust:8081
+
+  agents-python:
+    build: ./agents-python
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      engine-rust:
+        condition: service_healthy
+    environment:
+      PORT: 8000
+      DATABASE_URL: postgres://vaultwatch:${POSTGRES_PASSWORD:-vaultwatch-dev-only}@postgres:5432/vaultwatch
+      REDIS_URL: redis://redis:6379/0
+      ENGINE_RUST_URL: http://engine-rust:8081
+      MODE: ${MODE:-auto}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      HAIKU_MODEL: ${HAIKU_MODEL:-claude-haiku-4-5-20251001}
+      SONNET_MODEL: ${SONNET_MODEL:-claude-sonnet-5}
+
+  dashboard-web:
+    build: ./dashboard-web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - agents-python
+      - gateway-go
+
+volumes:
+  pgdata:
+  audit-data:
