@@ -44,7 +44,7 @@ impl AuditLog {
             let file = File::open(&path)?;
             BufReader::new(file)
                 .lines()
-                .filter_map(|line| line.ok())
+                .map_while(Result::ok)
                 .filter(|line| !line.trim().is_empty())
                 .map(|line| serde_json::from_str::<AuditEntry>(&line))
                 .collect::<Result<Vec<_>, _>>()
