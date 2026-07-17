@@ -70,7 +70,14 @@ impl AuditLog {
             .map(|e| e.hash.clone())
             .unwrap_or_else(|| GENESIS_HASH.to_string());
         let timestamp = Utc::now();
-        let hash = compute_hash(seq, &timestamp, &event_type, &subject_id, &payload, &prev_hash);
+        let hash = compute_hash(
+            seq,
+            &timestamp,
+            &event_type,
+            &subject_id,
+            &payload,
+            &prev_hash,
+        );
 
         let entry = AuditEntry {
             seq,
@@ -88,7 +95,11 @@ impl AuditLog {
     }
 
     fn persist(&self, entry: &AuditEntry) {
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&self.path) {
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+        {
             let _ = writeln!(file, "{}", serde_json::to_string(entry).unwrap());
         }
     }
@@ -166,8 +177,16 @@ mod tests {
     fn chain_of_appends_verifies() {
         let log = temp_log();
         log.append("case.opened".into(), "case_1".into(), json!({"risk": 10}));
-        log.append("case.escalated".into(), "case_1".into(), json!({"risk": 80}));
-        log.append("case.closed".into(), "case_1".into(), json!({"outcome": "confirmed_fraud"}));
+        log.append(
+            "case.escalated".into(),
+            "case_1".into(),
+            json!({"risk": 80}),
+        );
+        log.append(
+            "case.closed".into(),
+            "case_1".into(),
+            json!({"outcome": "confirmed_fraud"}),
+        );
 
         let result = log.verify();
         assert!(result.valid);
@@ -179,8 +198,16 @@ mod tests {
     fn tampering_with_an_entry_breaks_the_chain_from_that_point() {
         let log = temp_log();
         log.append("case.opened".into(), "case_1".into(), json!({"risk": 10}));
-        log.append("case.escalated".into(), "case_1".into(), json!({"risk": 80}));
-        log.append("case.closed".into(), "case_1".into(), json!({"outcome": "confirmed_fraud"}));
+        log.append(
+            "case.escalated".into(),
+            "case_1".into(),
+            json!({"risk": 80}),
+        );
+        log.append(
+            "case.closed".into(),
+            "case_1".into(),
+            json!({"outcome": "confirmed_fraud"}),
+        );
 
         // Tamper with entry 2 without recomputing its hash - simulates
         // someone editing the log file directly.
@@ -199,7 +226,11 @@ mod tests {
         {
             let log = AuditLog::open(path.clone()).unwrap();
             log.append("case.opened".into(), "case_1".into(), json!({"risk": 10}));
-            log.append("case.escalated".into(), "case_1".into(), json!({"risk": 80}));
+            log.append(
+                "case.escalated".into(),
+                "case_1".into(),
+                json!({"risk": 80}),
+            );
         }
 
         let reloaded = AuditLog::open(path).unwrap();

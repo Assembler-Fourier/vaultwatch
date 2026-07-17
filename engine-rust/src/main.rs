@@ -22,9 +22,7 @@ async fn health() -> &'static str {
     "ok"
 }
 
-async fn score_transaction(
-    Json(req): Json<ScoreRequest>,
-) -> Json<models::ScoreResponse> {
+async fn score_transaction(Json(req): Json<ScoreRequest>) -> Json<models::ScoreResponse> {
     Json(rules::score(&req))
 }
 
@@ -32,7 +30,9 @@ async fn append_audit(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AuditAppendRequest>,
 ) -> Json<models::AuditEntry> {
-    let entry = state.audit.append(req.event_type, req.subject_id, req.payload);
+    let entry = state
+        .audit
+        .append(req.event_type, req.subject_id, req.payload);
     Json(entry)
 }
 
@@ -56,8 +56,7 @@ async fn recent_audit(
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 

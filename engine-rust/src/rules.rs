@@ -26,8 +26,7 @@ fn mean_stddev(values: &[f64]) -> Option<(f64, f64)> {
         return None;
     }
     let mean = values.iter().sum::<f64>() / values.len() as f64;
-    let variance =
-        values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
+    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
     Some((mean, variance.sqrt()))
 }
 
