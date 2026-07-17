@@ -45,7 +45,10 @@ services:
   gateway-go:
     build: ./gateway-go
     ports:
-      - "8080:8080"
+      # Host-side port is 8090 (not 8080) to avoid colliding with whatever
+      # else commonly squats on 8080 on a dev machine; the container still
+      # listens on 8080 internally, which is what other services use.
+      - "8090:8080"
     depends_on:
       postgres:
         condition: service_healthy

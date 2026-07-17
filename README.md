@@ -68,7 +68,7 @@ docker compose up --build
 ```
 
 - Dashboard: http://localhost:3000
-- Gateway (auth + proxied scoring): http://localhost:8080
+- Gateway (auth + proxied scoring): http://localhost:8090
 - Risk engine (direct): http://localhost:8081
 - Agent orchestrator (direct): http://localhost:8000
 
