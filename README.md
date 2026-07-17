@@ -1,8 +1,10 @@
 # VaultWatch
 
+[![CI](https://github.com/Assembler-Fourier/vaultwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/Assembler-Fourier/vaultwatch/actions/workflows/ci.yml)
+
 **A tiered, cost-aware multi-agent Claude pipeline that fuses financial-fraud detection with account-security signals into one operations view.**
 
-**Live showcase: https://dashboard-web-three-sable.vercel.app**
+**Live showcase (click it, it's real and running): https://dashboard-web-three-sable.vercel.app**
 
 VaultWatch answers a question a fraud team and a security team usually can't answer together: *is this high-value transfer suspicious because the account looks compromised, not just because the amount is unusual?* A rules engine and a fraud model looking at transactions alone will miss that. A SIEM looking at logins alone will miss it too. VaultWatch correlates both streams and only escalates the cases where it actually matters.
 
@@ -91,6 +93,84 @@ cd agents-python && pip install -r requirements-dev.txt && pytest && uvicorn app
 # TypeScript
 cd dashboard-web && npm install && npm run dev
 ```
+
+---
+
+## Proof this actually runs
+
+Beyond the [live showcase](https://dashboard-web-three-sable.vercel.app) and the [CI badge](https://github.com/Assembler-Fourier/vaultwatch/actions/workflows/ci.yml) at the top of this file, here's an actual response captured straight from `docker compose up` — all four containers, real inter-service HTTP calls (`dashboard-web` → `agents-python` → `engine-rust`), no mocking. `MODE=auto` and no `ANTHROPIC_API_KEY` were set for this specific capture, so the Haiku/Sonnet stages ran through the deterministic `ReplayProvider` rather than spending on a live call — same orchestrator, same tool-execution loop, same JSON contracts as live mode, just swapping what answers the model calls (see `agents-python/app/llm/provider.py`):
+
+```bash
+$ curl -s -X POST "http://localhost:8000/v1/pipeline/run?force_risky=true" | python -m json.tool
+```
+
+<details>
+<summary>Full response (rules → pre-filter → triage → investigation → compliance → alert, one real transaction, one real HTTP round trip)</summary>
+
+```json
+{
+    "transaction": {
+        "id": "tx_386cdb4ea205",
+        "account_id": "acct_90851",
+        "amount": 4510.43,
+        "currency": "EUR",
+        "timestamp": "2026-07-17T17:20:06.462270Z",
+        "lat": 51.5072,
+        "lon": -0.1276,
+        "beneficiary_id": "ben_441582",
+        "device_id": "dev_984067"
+    },
+    "stage_reached": "compliance",
+    "rules": {
+        "risk_score": 100,
+        "risk_band": "critical",
+        "triggered_rules": [
+            { "rule": "velocity_amount", "weight": 20, "detail": "cumulative amount in the last hour is 9020.86 (threshold 5000.00)" },
+            { "rule": "amount_outlier", "weight": 30, "detail": "amount 4510.43 is 147.6 standard deviations above the account mean (121.28)" },
+            { "rule": "impossible_travel", "weight": 40, "detail": "16994km in 1.00h implies 16999km/h (threshold 900km/h)" },
+            { "rule": "new_beneficiary_high_value", "weight": 25, "detail": "first payment to beneficiary ben_441582 for 4510.43 (threshold 1000.00)" },
+            { "rule": "new_device", "weight": 10, "detail": "device dev_984067 has not been seen on this account before" }
+        ]
+    },
+    "prefilter": { "anomaly_score": 0.7137592948482069, "is_anomaly": true },
+    "triage": {
+        "fraud_likelihood": 0.82,
+        "category": "potential_account_takeover",
+        "escalate": true,
+        "reasoning": "The transaction stacks a statistical amount outlier with a first-time beneficiary, and the pre-filter and rules engine both flagged it independently. That combination is consistent with a compromised account being drained rather than normal spending drift."
+    },
+    "case": {
+        "summary": "Account acct_90851 sent an out-of-pattern high-value payment to a beneficiary never seen before on this account. Transaction history shows a stable spending baseline that this payment breaks sharply. The entity graph shows shared-device links to other accounts opened in a short window, a pattern consistent with a fraud ring rather than an isolated compromised account.",
+        "risk_score": 87,
+        "evidence": [
+            "Transaction amount is a statistical outlier vs. 12 recent transactions",
+            "Beneficiary has no prior payment history on this account",
+            "Entity graph shows shared-device links to other recently opened accounts",
+            "Sanctions screen against synthetic watchlist returned no direct hit"
+        ],
+        "linked_accounts": ["acct_08511", "acct_08512"],
+        "sanctions_hit": false,
+        "recommend_compliance_review": true
+    },
+    "compliance": {
+        "narrative": "SYNTHETIC DRAFT - account acct_90851 exhibited a sharp deviation from its established transaction pattern, sending a high-value payment to a previously unseen beneficiary. The receiving account shares device fingerprints with multiple other recently opened accounts, a pattern consistent with mule-account activity. Recommend manual review and, if confirmed, filing consistent with the institution's AML program before further funds movement.",
+        "obligations_referenced": [
+            "EU AMLD5/6 - suspicious transaction reporting obligation",
+            "Central Bank of Ireland - Criminal Justice (Money Laundering and Terrorist Financing) Act 2010 (as amended) reporting expectations"
+        ],
+        "disclaimer": "Synthetic demonstration output only. Not legal or regulatory advice, and not a real Suspicious Activity Report."
+    },
+    "alert": {
+        "severity": "high",
+        "title": "Financial risk alert",
+        "fused_with_security_event": false
+    }
+}
+```
+
+</details>
+
+**This capture is also how a real bug got found and fixed**, not hypothetically: the first time this ran against the real Postgres-backed case store (as opposed to the unit tests' mocked store), every escalated transaction failed to persist with `TypeError: Object of type datetime is not JSON serializable` — `PipelineResult.as_dict()` was using Pydantic's `model_dump()` instead of `model_dump(mode="json")`, so `Alert.timestamp` reached `json.dumps()` as a raw Python object. The WebSocket broadcasts (which fire before the failed save) still worked, so the dashboard looked fine while the persistence layer was silently broken underneath it - exactly the kind of bug that only shows up when you run the whole stack, not just the unit tests. Fixed in [`agents-python/app/orchestrator.py`](agents-python/app/orchestrator.py) - see the commit history for this and a second real bug (a WebSocket connection cleanup issue that could cause the live feed to receive duplicate events) found and fixed the same way.
 
 ---
 
