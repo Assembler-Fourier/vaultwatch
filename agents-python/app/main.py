@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import redis.asyncio as redis_asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
