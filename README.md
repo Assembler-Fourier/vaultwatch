@@ -2,7 +2,7 @@
 
 **A tiered, cost-aware multi-agent Claude pipeline that fuses financial-fraud detection with account-security signals into one operations view.**
 
-Live showcase: _add your Vercel URL here after deploying_
+**Live showcase: https://dashboard-web-three-sable.vercel.app**
 
 VaultWatch answers a question a fraud team and a security team usually can't answer together: *is this high-value transfer suspicious because the account looks compromised, not just because the amount is unusual?* A rules engine and a fraud model looking at transactions alone will miss that. A SIEM looking at logins alone will miss it too. VaultWatch correlates both streams and only escalates the cases where it actually matters.
 
