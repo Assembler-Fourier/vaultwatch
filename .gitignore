@@ -1,0 +1,40 @@
+# Rust
+engine-rust/target/
+engine-rust/**/*.rs.bk
+
+# Go
+gateway-go/gateway-go
+gateway-go/**/*.exe
+gateway-go/tmp/
+
+# Python
+agents-python/__pycache__/
+agents-python/**/__pycache__/
+agents-python/.venv/
+agents-python/venv/
+agents-python/*.egg-info/
+agents-python/.pytest_cache/
+agents-python/.ruff_cache/
+
+# Node / Next.js
+dashboard-web/node_modules/
+dashboard-web/.next/
+dashboard-web/out/
+dashboard-web/.vercel/
+node_modules/
+
+# Env files (never commit secrets)
+.env
+.env.local
+*.env
+!*.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Docker volumes / data
+infra/pgdata/
+*.log
