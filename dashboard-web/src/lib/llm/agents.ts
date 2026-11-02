@@ -98,7 +98,7 @@ export async function runInvestigatorAgent(
       role: "user",
       content:
         `Investigate transaction ${tx.id} on account ${tx.account_id} (amount=${tx.amount} ${tx.currency}, ` +
-        `beneficiary=${tx.beneficiary_id}). Triage flagged it as '${triage.category}' with ` +
+        `beneficiary=${tx.beneficiary_id}, name=${tx.beneficiary_name}). Triage flagged it as '${triage.category}' with ` +
         `fraud_likelihood=${triage.fraud_likelihood.toFixed(2)}: ${triage.reasoning}`,
     },
   ];
@@ -114,7 +114,7 @@ export async function runInvestigatorAgent(
       tools,
       replayFamily: "investigation",
       replayScenario: scenario,
-      replayVars: { account_id: tx.account_id },
+      replayVars: { account_id: tx.account_id, beneficiary_name: tx.beneficiary_name ?? "Unspecified demo beneficiary", amount: String(tx.amount), currency: tx.currency },
     });
 
     const finalCall = response.toolCalls.find((c) => c.name === "emit_case_file");
@@ -176,7 +176,7 @@ export async function runComplianceAgent(
     tools: [EMIT_COMPLIANCE_REPORT_TOOL],
     toolChoice: { type: "tool", name: "emit_compliance_report" },
     replayFamily: "compliance",
-    replayVars: { account_id: tx.account_id },
+    replayVars: { account_id: tx.account_id, case_summary: caseFile.summary, evidence: caseFile.evidence.join(" ") },
   });
 
   const call = response.toolCalls.find((c) => c.name === "emit_compliance_report");

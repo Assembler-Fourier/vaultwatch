@@ -82,10 +82,22 @@ export class ReplayProvider implements ModelProvider {
     if (replayFamily === "triage") {
       step = transcripts.triageStep(replayScenario);
     } else if (replayFamily === "investigation") {
-      const steps = transcripts.investigationSteps(replayScenario, replayVars.account_id ?? "acct_unknown");
+      const names: Record<string, string> = {};
+      const evidence: Record<string, Record<string, unknown>> = {};
+      for (const message of messages) {
+        if (!Array.isArray(message.content)) continue;
+        for (const block of message.content) {
+          if (block.type === "tool_use") names[block.id] = block.name;
+          if (block.type === "tool_result" && typeof block.content === "string" && names[block.tool_use_id]) {
+            evidence[names[block.tool_use_id]] = JSON.parse(block.content);
+          }
+        }
+      }
+      const steps = transcripts.investigationSteps(replayScenario, replayVars.account_id ?? "acct_unknown",
+        replayVars.beneficiary_name ?? "Unspecified demo beneficiary", evidence, Number(replayVars.amount ?? 0));
       step = steps[Math.min(turn, steps.length - 1)];
     } else if (replayFamily === "compliance") {
-      step = transcripts.complianceStep(replayVars.account_id ?? "acct_unknown");
+      step = transcripts.complianceStep(replayVars.account_id ?? "acct_unknown", replayVars.case_summary ?? "", replayVars.evidence ?? "");
     } else {
       step = { text: "[replay mode: no script configured for this agent]" };
     }

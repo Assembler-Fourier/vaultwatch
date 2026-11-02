@@ -52,13 +52,14 @@ class InvestigatorAgent:
         tx: Transaction,
         triage: TriageVerdict,
         on_tool_call: ToolCallObserver | None = None,
+        rules_score: int = 0,
     ) -> CaseFile:
         messages: list[dict[str, Any]] = [
             {
                 "role": "user",
                 "content": (
                     f"Investigate transaction {tx.id} on account {tx.account_id} (amount={tx.amount} "
-                    f"{tx.currency}, beneficiary={tx.beneficiary_id}). Triage flagged it as "
+                    f"{tx.currency}, beneficiary={tx.beneficiary_id}, name={tx.beneficiary_name}). Triage flagged it as "
                     f"'{triage.category}' with fraud_likelihood={triage.fraud_likelihood:.2f}: {triage.reasoning}"
                 ),
             }
@@ -75,7 +76,7 @@ class InvestigatorAgent:
                 tools=tools,
                 replay_family="investigation",
                 replay_scenario=scenario,
-                replay_vars={"account_id": tx.account_id},
+                replay_vars={"account_id": tx.account_id, "beneficiary_name": tx.beneficiary_name or "Unspecified demo beneficiary", "amount": tx.amount, "currency": tx.currency, "rules_score": rules_score},
             )
 
             for call in response.tool_calls:

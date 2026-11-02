@@ -135,9 +135,24 @@ class ReplayProvider(ModelProvider):
         turn = sum(1 for m in messages if m.get("role") == "assistant")
 
         if replay_family == "triage":
-            step = transcripts.triage_step(replay_scenario)
+            step = transcripts.triage_step(replay_scenario, **replay_vars)
         elif replay_family == "investigation":
-            steps = transcripts.investigation_steps(replay_scenario, **replay_vars)
+            # Replay consumes the same tool results as the live agent; no invented verdict.
+            import json
+            names = {}
+            evidence = {}
+            for message in messages:
+                content = message.get("content")
+                if not isinstance(content, list):
+                    continue
+                for block in content:
+                    if block.get("type") == "tool_use":
+                        names[block["id"]] = block["name"]
+                    elif block.get("type") == "tool_result":
+                        name = names.get(block.get("tool_use_id"))
+                        if name:
+                            evidence[name] = json.loads(block["content"])
+            steps = transcripts.investigation_steps(replay_scenario, evidence=evidence, **replay_vars)
             step = steps[min(turn, len(steps) - 1)]
         elif replay_family == "compliance":
             step = transcripts.compliance_step(replay_scenario, **replay_vars)

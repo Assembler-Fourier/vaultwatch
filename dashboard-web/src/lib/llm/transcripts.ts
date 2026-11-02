@@ -29,54 +29,37 @@ export function triageStep(scenario: string): ReplayStep {
   };
 }
 
-export function investigationSteps(scenario: string, accountId: string): ReplayStep[] {
-  if (scenario === "high") {
-    return [
-      { tool: "get_transaction_history", input: { account_id: accountId } },
-      { tool: "get_entity_graph", input: { account_id: accountId } },
-      { tool: "check_sanctions_list", input: { name: "Victor Krantz Holdings" } },
-      {
-        tool: "emit_case_file",
-        input: {
-          summary: `Account ${accountId} sent an out-of-pattern high-value payment to a beneficiary never seen before on this account. Transaction history shows a stable spending baseline that this payment breaks sharply. The entity graph shows shared-device links to other accounts opened in a short window, a pattern consistent with a fraud ring rather than an isolated compromised account.`,
-          risk_score: 87,
-          evidence: [
-            "Transaction amount is a statistical outlier vs. 12 recent transactions",
-            "Beneficiary has no prior payment history on this account",
-            "Entity graph shows shared-device links to other recently opened accounts",
-            "Sanctions screen against synthetic watchlist returned no direct hit",
-          ],
-          linked_accounts: [`acct_${accountId.slice(-4)}1`, `acct_${accountId.slice(-4)}2`],
-          sanctions_hit: false,
-          recommend_compliance_review: true,
-        },
-      },
-    ];
-  }
-  return [
-    {
-      tool: "emit_case_file",
-      input: {
-        summary: `Account ${accountId}'s activity is consistent with its established baseline.`,
-        risk_score: 12,
-        evidence: ["No material deviation from the account's transaction history"],
-        linked_accounts: [],
-        sanctions_hit: false,
-        recommend_compliance_review: false,
-      },
-    },
+export function investigationSteps(scenario: string, accountId: string, beneficiaryName = "Unspecified demo beneficiary",
+  results: Record<string, Record<string, unknown>> = {}, amount = 0): ReplayStep[] {
+  const history = (results.get_transaction_history?.history ?? []) as { amount: number }[];
+  const linked = (results.get_entity_graph?.linked_accounts ?? []) as string[];
+  const screen = results.check_sanctions_list ?? {};
+  const hit = screen.hit === true;
+  const average = history.length ? history.reduce((sum, row) => sum + row.amount, 0) / history.length : 0;
+  const evidence = [
+    `Payment ${amount.toFixed(2)} EUR; ${history.length} synthetic historical payments average ${average.toFixed(2)}.`,
+    `Synthetic entity graph returned ${linked.length} linked accounts.`,
+    `Synthetic watchlist ${hit ? "MATCH" : "no match"} for ${String(screen.query ?? beneficiaryName)}.`,
   ];
+  if (scenario === "high") return [
+    { tool: "get_transaction_history", input: { account_id: accountId } },
+    { tool: "get_entity_graph", input: { account_id: accountId } },
+    { tool: "check_sanctions_list", input: { name: beneficiaryName } },
+    { tool: "emit_case_file", input: {
+      summary: `Account ${accountId} was escalated by triage. ${evidence.join(" ")}`,
+      risk_score: Math.min(95, 70 + (hit ? 15 : 0) + linked.length * 3), evidence,
+      linked_accounts: linked, sanctions_hit: hit, recommend_compliance_review: true,
+    } },
+  ];
+  return [{ tool: "emit_case_file", input: {
+    summary: "Triage did not identify a high-risk pattern; no research tools were requested.",
+    risk_score: 12, evidence: [], linked_accounts: [], sanctions_hit: false, recommend_compliance_review: false,
+  } }];
 }
 
-export function complianceStep(accountId: string): ReplayStep {
-  return {
-    tool: "emit_compliance_report",
-    input: {
-      narrative: `SYNTHETIC DRAFT - account ${accountId} exhibited a sharp deviation from its established transaction pattern, sending a high-value payment to a previously unseen beneficiary. The receiving account shares device fingerprints with multiple other recently opened accounts, a pattern consistent with mule-account activity. Recommend manual review and, if confirmed, filing consistent with the institution's AML program before further funds movement.`,
-      obligations_referenced: [
-        "EU AMLD5/6 - suspicious transaction reporting obligation",
-        "Central Bank of Ireland - Criminal Justice (Money Laundering and Terrorist Financing) Act 2010 (as amended) reporting expectations",
-      ],
-    },
-  };
+export function complianceStep(accountId: string, summary = "", evidence = ""): ReplayStep {
+  return { tool: "emit_compliance_report", input: {
+    narrative: `SYNTHETIC DRAFT - ${summary} ${summary.includes(evidence) ? "" : evidence} Manual review recommended. No payment was blocked and no regulatory report was filed.`,
+    obligations_referenced: ["Internal review of suspicious activity (synthetic demonstration)"],
+  } };
 }

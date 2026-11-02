@@ -129,7 +129,7 @@ def build_scoring_context(
     return {
         "recent_amounts": amounts,
         "recent_count_last_hour": 1,
-        "recent_sum_last_hour": current_amount,
+        "recent_sum_last_hour": amounts[-1],
         "known_beneficiaries": profile.known_beneficiaries,
         "known_devices": profile.known_devices,
         "last_location": {
@@ -160,6 +160,7 @@ def generate_demo_transaction(force_risky: bool = False, account_id: str | None 
             "timestamp": now.isoformat(),
             "lat": far_city[0],
             "lon": far_city[1],
+            "beneficiary_name": "Victor Krantz Holdings",
             "beneficiary_id": f"ben_{rng.randint(100000, 999999)}",  # never in known_beneficiaries
             "device_id": f"dev_{rng.randint(100000, 999999)}",  # never in known_devices
         }
@@ -172,6 +173,7 @@ def generate_demo_transaction(force_risky: bool = False, account_id: str | None 
         "timestamp": now.isoformat(),
         "lat": profile.home_city[0],
         "lon": profile.home_city[1],
+        "beneficiary_name": "North Quay Supplies",
         "beneficiary_id": rng.choice(profile.known_beneficiaries),
         "device_id": profile.known_devices[0],
     }

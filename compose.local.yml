@@ -1,0 +1,78 @@
+# Local synthetic review only. Reuses existing vaultwatch-study data volumes.
+name: vaultwatch-study
+
+x-local-runtime: &local-runtime
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    <<: *local-runtime
+    ports: !override ["127.0.0.1:5432:5432"]
+  redis:
+    <<: *local-runtime
+    ports: !override ["127.0.0.1:6379:6379"]
+  engine-rust:
+    <<: *local-runtime
+    ports: !override ["127.0.0.1:8081:8081"]
+  gateway-go:
+    <<: *local-runtime
+    ports: !override ["127.0.0.1:8090:8080"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+  agents-python:
+    <<: *local-runtime
+    ports: !override ["127.0.0.1:8000:8000"]
+    depends_on:
+      gateway-go:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import json, sys, urllib.request;
+          s=json.load(urllib.request.urlopen('http://127.0.0.1:8000/v1/status', timeout=4));
+          expected={'python','rust','go','postgres','redis','security_feed'};
+          sys.exit(0 if s.get('storage')=='postgres' and all(s.get('services',{}).get(k)=='online' for k in expected) else 1)
+      interval: 10s
+      timeout: 6s
+      retries: 6
+      start_period: 20s
+    environment:
+      MODE: replay
+      ANTHROPIC_API_KEY: ""
+      AUTO_GENERATE: "false"
+      DEMO_CONTROLS: "true"
+      GATEWAY_GO_URL: http://gateway-go:8080
+  dashboard-web:
+    <<: *local-runtime
+    ports: !override ["127.0.0.1:3000:3000"]
+    depends_on:
+      agents-python:
+        condition: service_healthy
+      gateway-go:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/', {signal: AbortSignal.timeout(4000)}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 6s
+      retries: 6
+      start_period: 20s
+    environment:
+      MODE: replay
+      ANTHROPIC_API_KEY: ""

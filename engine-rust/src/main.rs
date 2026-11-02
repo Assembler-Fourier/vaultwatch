@@ -29,11 +29,17 @@ async fn score_transaction(Json(req): Json<ScoreRequest>) -> Json<models::ScoreR
 async fn append_audit(
     State(state): State<Arc<AppState>>,
     Json(req): Json<AuditAppendRequest>,
-) -> Json<models::AuditEntry> {
+) -> Result<Json<models::AuditEntry>, (axum::http::StatusCode, String)> {
     let entry = state
         .audit
-        .append(req.event_type, req.subject_id, req.payload);
-    Json(entry)
+        .append(req.event_type, req.subject_id, req.payload)
+        .map_err(|_| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Audit record could not be persisted".to_string(),
+            )
+        })?;
+    Ok(Json(entry))
 }
 
 async fn verify_audit(State(state): State<Arc<AppState>>) -> Json<models::VerifyResponse> {

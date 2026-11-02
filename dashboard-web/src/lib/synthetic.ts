@@ -143,6 +143,7 @@ export function generateDemoTransaction(forceRisky: boolean, accountIdIn?: strin
       timestamp: now.toISOString(),
       lat: farCity[0],
       lon: farCity[1],
+      beneficiary_name: "Victor Krantz Holdings",
       beneficiary_id: `ben_${randInt(rng, 100000, 999999)}`,
       device_id: `dev_${randInt(rng, 100000, 999999)}`,
     };

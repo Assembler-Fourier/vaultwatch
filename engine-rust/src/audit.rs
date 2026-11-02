@@ -62,7 +62,12 @@ impl AuditLog {
         })
     }
 
-    pub fn append(&self, event_type: String, subject_id: String, payload: Value) -> AuditEntry {
+    pub fn append(
+        &self,
+        event_type: String,
+        subject_id: String,
+        payload: Value,
+    ) -> std::io::Result<AuditEntry> {
         let mut entries = self.entries.lock().expect("audit log mutex poisoned");
         let seq = entries.len() as u64 + 1;
         let prev_hash = entries
@@ -89,26 +94,56 @@ impl AuditLog {
             hash,
         };
 
-        self.persist(&entry);
+        self.persist(&entry)?;
         entries.push(entry.clone());
-        entry
+        Ok(entry)
     }
 
-    fn persist(&self, entry: &AuditEntry) {
-        if let Ok(mut file) = OpenOptions::new()
+    fn persist(&self, entry: &AuditEntry) -> std::io::Result<()> {
+        let mut file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&self.path)
-        {
-            let _ = writeln!(file, "{}", serde_json::to_string(entry).unwrap());
-        }
+            .open(&self.path)?;
+        writeln!(file, "{}", serde_json::to_string(entry)?)?;
+        file.sync_data()
     }
 
     pub fn verify(&self) -> VerifyResponse {
         let entries = self.entries.lock().expect("audit log mutex poisoned");
+        // Read the persisted log, not just the in-memory copy. Hold the append
+        // lock so verification cannot observe a half-written line.
+        let disk: std::io::Result<Vec<AuditEntry>> = (|| {
+            if !self.path.exists() && entries.is_empty() {
+                return Ok(Vec::new());
+            }
+            BufReader::new(File::open(&self.path)?)
+                .lines()
+                .map(|line| {
+                    serde_json::from_str(&line?)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                })
+                .collect()
+        })();
+        let disk = match disk {
+            Ok(disk) => disk,
+            Err(_) => {
+                return VerifyResponse {
+                    valid: false,
+                    entries_checked: 0,
+                    first_broken_seq: Some(1),
+                }
+            }
+        };
+        if disk.len() != entries.len() {
+            return VerifyResponse {
+                valid: false,
+                entries_checked: disk.len() as u64,
+                first_broken_seq: Some(disk.len().min(entries.len()) as u64 + 1),
+            };
+        }
         let mut expected_prev = GENESIS_HASH.to_string();
 
-        for entry in entries.iter() {
+        for (index, entry) in disk.iter().enumerate() {
             let recomputed = compute_hash(
                 entry.seq,
                 &entry.timestamp,
@@ -118,7 +153,11 @@ impl AuditLog {
                 &entry.prev_hash,
             );
 
-            if entry.prev_hash != expected_prev || recomputed != entry.hash {
+            if entry.seq != index as u64 + 1
+                || entry.prev_hash != expected_prev
+                || recomputed != entry.hash
+                || entry.hash != entries[index].hash
+            {
                 return VerifyResponse {
                     valid: false,
                     entries_checked: entry.seq,
@@ -149,6 +188,10 @@ impl AuditLog {
         let mut entries = self.entries.lock().unwrap();
         if let Some(entry) = entries.iter_mut().find(|e| e.seq == seq) {
             entry.payload = new_payload;
+            let mut file = File::create(&self.path).unwrap();
+            for entry in entries.iter() {
+                writeln!(file, "{}", serde_json::to_string(entry).unwrap()).unwrap();
+            }
         }
     }
 }
@@ -176,17 +219,20 @@ mod tests {
     #[test]
     fn chain_of_appends_verifies() {
         let log = temp_log();
-        log.append("case.opened".into(), "case_1".into(), json!({"risk": 10}));
+        log.append("case.opened".into(), "case_1".into(), json!({"risk": 10}))
+            .unwrap();
         log.append(
             "case.escalated".into(),
             "case_1".into(),
             json!({"risk": 80}),
-        );
+        )
+        .unwrap();
         log.append(
             "case.closed".into(),
             "case_1".into(),
             json!({"outcome": "confirmed_fraud"}),
-        );
+        )
+        .unwrap();
 
         let result = log.verify();
         assert!(result.valid);
@@ -197,17 +243,20 @@ mod tests {
     #[test]
     fn tampering_with_an_entry_breaks_the_chain_from_that_point() {
         let log = temp_log();
-        log.append("case.opened".into(), "case_1".into(), json!({"risk": 10}));
+        log.append("case.opened".into(), "case_1".into(), json!({"risk": 10}))
+            .unwrap();
         log.append(
             "case.escalated".into(),
             "case_1".into(),
             json!({"risk": 80}),
-        );
+        )
+        .unwrap();
         log.append(
             "case.closed".into(),
             "case_1".into(),
             json!({"outcome": "confirmed_fraud"}),
-        );
+        )
+        .unwrap();
 
         // Tamper with entry 2 without recomputing its hash - simulates
         // someone editing the log file directly.
@@ -225,17 +274,44 @@ mod tests {
 
         {
             let log = AuditLog::open(path.clone()).unwrap();
-            log.append("case.opened".into(), "case_1".into(), json!({"risk": 10}));
+            log.append("case.opened".into(), "case_1".into(), json!({"risk": 10}))
+                .unwrap();
             log.append(
                 "case.escalated".into(),
                 "case_1".into(),
                 json!({"risk": 80}),
-            );
+            )
+            .unwrap();
         }
 
         let reloaded = AuditLog::open(path).unwrap();
         let result = reloaded.verify();
         assert!(result.valid);
         assert_eq!(result.entries_checked, 2);
+    }
+    #[test]
+    fn write_failure_is_reported_without_advancing_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.log");
+        let log = AuditLog::open(path.clone()).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(log
+            .append("case.opened".into(), "tx_1".into(), json!({}))
+            .is_err());
+        assert!(log.recent(10).is_empty());
+    }
+
+    #[test]
+    fn external_disk_tampering_is_detected() {
+        let log = temp_log();
+        log.append("case.opened".into(), "tx_1".into(), json!({"amount": 10}))
+            .unwrap();
+        let original = std::fs::read_to_string(&log.path).unwrap();
+        std::fs::write(
+            &log.path,
+            original.replace("\"amount\":10", "\"amount\":99"),
+        )
+        .unwrap();
+        assert!(!log.verify().valid);
     }
 }

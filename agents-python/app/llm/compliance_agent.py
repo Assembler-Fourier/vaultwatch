@@ -54,7 +54,7 @@ class ComplianceAgent:
             tool_choice={"type": "tool", "name": "emit_compliance_report"},
             replay_family="compliance",
             replay_scenario="high",
-            replay_vars={"account_id": tx.account_id},
+            replay_vars={"account_id": tx.account_id, "case_summary": case.summary, "evidence": case.evidence},
         )
 
         for call in response.tool_calls:

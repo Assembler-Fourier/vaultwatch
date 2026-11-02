@@ -70,7 +70,7 @@ def test_investigator_agent_high_risk_case_calls_research_tools_then_emits_case_
         fraud_likelihood=0.82, category="potential_account_takeover", escalate=True, reasoning="stacked signals"
     )
 
-    case = agent.run(make_tx(account_id="acct_high_risk"), triage, on_tool_call=lambda name, i, r: observed_calls.append(name))
+    case = agent.run(make_tx(account_id="acct_high_risk", amount=9000), triage, on_tool_call=lambda name, i, r: observed_calls.append(name))
 
     assert observed_calls == ["get_transaction_history", "get_entity_graph", "check_sanctions_list"]
     assert case.recommend_compliance_review is True
@@ -92,3 +92,12 @@ def test_compliance_agent_produces_disclaimer_and_narrative() -> None:
     assert "SYNTHETIC" in report.narrative
     assert report.disclaimer  # default disclaimer always present
     assert len(report.obligations_referenced) > 0
+
+
+def test_investigator_can_reduce_initial_suspicion_after_moderate_evidence():
+    agent = InvestigatorAgent(ReplayProvider(), model="replay-model")
+    triage = TriageVerdict(fraud_likelihood=0.82, category="unusual_activity", escalate=True, reasoning="new device")
+    case = agent.run(make_tx(amount=60), triage, rules_score=35)
+    assert 40 <= case.risk_score < 70
+    assert not case.sanctions_hit
+    assert not case.recommend_compliance_review

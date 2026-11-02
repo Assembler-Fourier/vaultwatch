@@ -15,6 +15,7 @@ agents-python/venv/
 agents-python/*.egg-info/
 agents-python/.pytest_cache/
 agents-python/.ruff_cache/
+scripts/__pycache__/
 
 # Node / Next.js
 dashboard-web/node_modules/

@@ -10,19 +10,19 @@ from __future__ import annotations
 from typing import Any
 
 
-def triage_step(scenario: str) -> dict[str, Any]:
+def triage_step(scenario: str, rules: dict | None = None, prefilter: dict | None = None) -> dict[str, Any]:
     if scenario == "high":
         return {
             "tool": "emit_triage_verdict",
             "input": {
                 "fraud_likelihood": 0.82,
-                "category": "potential_account_takeover",
+                "category": "potential_account_takeover" if any(r.get("rule") == "impossible_travel" for r in (rules or {}).get("triggered_rules", [])) else "unusual_activity",
                 "escalate": True,
                 "reasoning": (
-                    "The transaction stacks a statistical amount outlier with a first-time "
-                    "beneficiary, and the pre-filter and rules engine both flagged it "
-                    "independently. That combination is consistent with a compromised "
-                    "account being drained rather than normal spending drift."
+                    f"Rules score {(rules or {}).get('risk_score', 'unknown')}. "
+                    f"Triggered: {', '.join(r['rule'] for r in (rules or {}).get('triggered_rules', [])) or 'none'}. "
+                    f"Statistical anomaly: {(prefilter or {}).get('is_anomaly', False)}. "
+                    "Replay triage escalates these signals for evidence gathering."
                 ),
             },
         }
@@ -40,67 +40,46 @@ def triage_step(scenario: str) -> dict[str, Any]:
     }
 
 
-def investigation_steps(scenario: str, account_id: str = "acct_unknown", **_: Any) -> list[dict[str, Any]]:
+def investigation_steps(
+    scenario: str, account_id: str = "acct_unknown", beneficiary_name: str = "Unspecified demo beneficiary",
+    evidence: dict | None = None, amount: float = 0, currency: str = "EUR", rules_score: int = 0, **_: Any,
+) -> list[dict[str, Any]]:
+    evidence = evidence or {}
+    history = evidence.get("get_transaction_history", {}).get("history", [])
+    linked = evidence.get("get_entity_graph", {}).get("linked_accounts", [])
+    screen = evidence.get("check_sanctions_list", {})
+    hit = bool(screen.get("hit", False))
+    mean = sum(row["amount"] for row in history) / len(history) if history else 0
+    facts = [
+        f"Payment {amount:.2f} {currency}; {len(history)} synthetic historical payments average {mean:.2f}.",
+        f"Synthetic entity graph returned {len(linked)} linked accounts.",
+        f"Synthetic watchlist {'MATCH' if hit else 'no match'} for {screen.get('query', beneficiary_name)}.",
+    ]
+    summary = f"Account {account_id} was escalated by triage. " + " ".join(facts)
+    # Investigation can downgrade an initial suspicion when returned evidence is moderate.
+    base = 70 if rules_score >= 50 or (mean > 0 and amount >= mean * 3) else 40
+    score = min(95, (85 if hit else base) + len(linked) * 3)
+    case = {"summary": summary, "risk_score": score,
+            "evidence": facts, "linked_accounts": linked, "sanctions_hit": hit,
+            "recommend_compliance_review": score >= 70 or hit}
     if scenario == "high":
         return [
             {"tool": "get_transaction_history", "input": {"account_id": account_id}},
             {"tool": "get_entity_graph", "input": {"account_id": account_id}},
-            {"tool": "check_sanctions_list", "input": {"name": "Victor Krantz Holdings"}},
-            {
-                "tool": "emit_case_file",
-                "input": {
-                    "summary": (
-                        f"Account {account_id} sent an out-of-pattern high-value payment to a "
-                        "beneficiary never seen before on this account. Transaction history shows "
-                        "a stable spending baseline that this payment breaks sharply. The entity "
-                        "graph shows shared-device links to other accounts opened in a short "
-                        "window, a pattern consistent with a fraud ring rather than an isolated "
-                        "compromised account."
-                    ),
-                    "risk_score": 87,
-                    "evidence": [
-                        "Transaction amount is a statistical outlier vs. 12 recent transactions",
-                        "Beneficiary has no prior payment history on this account",
-                        "Entity graph shows shared-device links to other recently opened accounts",
-                        "Sanctions screen against synthetic watchlist returned no direct hit",
-                    ],
-                    "linked_accounts": [f"acct_{account_id[-4:]}1", f"acct_{account_id[-4:]}2"],
-                    "sanctions_hit": False,
-                    "recommend_compliance_review": True,
-                },
-            },
+            {"tool": "check_sanctions_list", "input": {"name": beneficiary_name}},
+            {"tool": "emit_case_file", "input": case},
         ]
-    return [
-        {
-            "tool": "emit_case_file",
-            "input": {
-                "summary": f"Account {account_id}'s activity is consistent with its established baseline.",
-                "risk_score": 12,
-                "evidence": ["No material deviation from the account's transaction history"],
-                "linked_accounts": [],
-                "sanctions_hit": False,
-                "recommend_compliance_review": False,
-            },
-        },
-    ]
+    return [{"tool": "emit_case_file", "input": {
+        "summary": "Triage did not identify a high-risk pattern; no research tools were requested.",
+        "risk_score": 12, "evidence": [], "linked_accounts": [], "sanctions_hit": False,
+        "recommend_compliance_review": False,
+    }}]
 
 
-def compliance_step(scenario: str, account_id: str = "acct_unknown", **_: Any) -> dict[str, Any]:
-    return {
-        "tool": "emit_compliance_report",
-        "input": {
-            "narrative": (
-                f"SYNTHETIC DRAFT - account {account_id} exhibited a sharp deviation from its "
-                "established transaction pattern, sending a high-value payment to a previously "
-                "unseen beneficiary. The receiving account shares device fingerprints with "
-                "multiple other recently opened accounts, a pattern consistent with mule-account "
-                "activity. Recommend manual review and, if confirmed, filing consistent with the "
-                "institution's AML program before further funds movement."
-            ),
-            "obligations_referenced": [
-                "EU AMLD5/6 - suspicious transaction reporting obligation",
-                "Central Bank of Ireland - Criminal Justice (Money Laundering and Terrorist "
-                "Financing) Act 2010 (as amended) reporting expectations",
-            ],
-        },
-    }
+def compliance_step(scenario: str, account_id: str = "acct_unknown", case_summary: str = "",
+                    evidence: list[str] | None = None, **_: Any) -> dict[str, Any]:
+    return {"tool": "emit_compliance_report", "input": {
+        "narrative": f"SYNTHETIC DRAFT - {case_summary} " + " ".join(item for item in (evidence or []) if item not in case_summary)
+                     + " Manual review recommended. This risk narrative precedes the separate payment decision. No real funds moved and no regulatory report was filed.",
+        "obligations_referenced": ["Internal review of suspicious activity (synthetic demonstration)"],
+    }}

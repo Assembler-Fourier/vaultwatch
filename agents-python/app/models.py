@@ -21,6 +21,7 @@ class Transaction(BaseModel):
     timestamp: datetime = Field(default_factory=utcnow)
     lat: float | None = None
     lon: float | None = None
+    beneficiary_name: str | None = None
     beneficiary_id: str | None = None
     device_id: str | None = None
 

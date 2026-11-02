@@ -64,6 +64,7 @@ class TriageAgent:
             tool_choice={"type": "tool", "name": "emit_triage_verdict"},
             replay_family="triage",
             replay_scenario=scenario,
+            replay_vars={"rules": rules.model_dump(), "prefilter": prefilter.model_dump()},
         )
 
         for call in response.tool_calls:

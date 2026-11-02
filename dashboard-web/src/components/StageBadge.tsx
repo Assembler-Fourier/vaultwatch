@@ -7,6 +7,7 @@ const STAGE_STYLES: Record<PipelineStage, string> = {
   investigation: "bg-orange-950 text-orange-300 border-orange-700",
   compliance: "bg-purple-950 text-purple-300 border-purple-700",
   fusion: "bg-rose-950 text-rose-300 border-rose-700",
+  payment: "bg-amber-950 text-amber-300 border-amber-700",
   closed: "bg-emerald-950 text-emerald-300 border-emerald-700",
 };
 
@@ -17,6 +18,7 @@ const STAGE_LABELS: Record<PipelineStage, string> = {
   investigation: "Sonnet Investigation",
   compliance: "Sonnet Compliance",
   fusion: "Security Fusion",
+  payment: "Payment Policy",
   closed: "Closed",
 };
 

@@ -11,6 +11,7 @@ export interface Transaction {
   timestamp: string;
   lat?: number | null;
   lon?: number | null;
+  beneficiary_name?: string | null;
   beneficiary_id?: string | null;
   device_id?: string | null;
 }
@@ -62,6 +63,7 @@ export type PipelineStage =
   | "investigation"
   | "compliance"
   | "fusion"
+  | "payment"
   | "closed";
 
 export interface AgentEvent {

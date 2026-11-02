@@ -18,6 +18,7 @@ import asyncpg
 class CaseStore(Protocol):
     async def save(self, transaction_id: str, account_id: str, result: dict[str, Any]) -> None: ...
     async def recent(self, limit: int = 50) -> list[dict[str, Any]]: ...
+    async def get(self, transaction_id: str) -> dict[str, Any] | None: ...
 
 
 class InMemoryCaseStore:
@@ -31,6 +32,9 @@ class InMemoryCaseStore:
 
     async def recent(self, limit: int = 50) -> list[dict[str, Any]]:
         return list(self._items)[:limit]
+
+    async def get(self, transaction_id: str) -> dict[str, Any] | None:
+        return next((row for row in self._items if row["transaction_id"] == transaction_id), None)
 
 
 class PostgresCaseStore:
@@ -74,3 +78,15 @@ class PostgresCaseStore:
             {"transaction_id": r["transaction_id"], "account_id": r["account_id"], "result": json.loads(r["result"])}
             for r in rows
         ]
+
+
+    async def get(self, transaction_id: str) -> dict[str, Any] | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT transaction_id, account_id, result FROM cases WHERE transaction_id=$1 ORDER BY id DESC LIMIT 1",
+                transaction_id,
+            )
+        if not row:
+            return None
+        return {"transaction_id": row["transaction_id"], "account_id": row["account_id"],
+                "result": json.loads(row["result"])}
